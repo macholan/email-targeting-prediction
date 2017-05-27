@@ -1,0 +1,544 @@
+---
+title: "Assignment 2"
+subtitle: Predictive Modeling in Regression
+author: "Christina Macholan"
+fig_caption: yes
+output:
+  pdf_document: default
+  html_document: default
+  word_document: default
+number_section: yes
+fontsize: 9pt
+affiliation: PREDICT 454 SECTION 55
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r libraries, echo = FALSE, include = FALSE, display = FALSE}
+# load the libraries to be used for the analysis 
+library(lattice)
+library(latticeExtra)
+```
+
+```{r latticetheme, echo=FALSE}
+# Set lattice plot theme
+mytheme <- standard.theme("png", color=FALSE)
+mytheme$axis.text$cex = 0.8
+mytheme$par.main.text$cex = 0.8
+mytheme$plot.polygon$col <- "#0b5394"
+#mytheme$layout.heights$top.padding = 1
+#mytheme$layout.heights$main.key.padding = 1
+```
+
+# Introduction
+
+In this assignment, we explore whether the price of a diamond can be predicted based on the store it was purchased from and its ratings on the four C's (carat, color, clarity, and cut).
+
+# Data Quality Check
+
+``` {r datastep, echo = FALSE, include = FALSE, display = FALSE}
+# read in data from comma-delimited text file
+diamonds <- read.csv("two_months_salary.csv")
+
+cat("\n","----- Initial Structure of diamonds data frame -----","\n")
+# examine the structure of the initial data frame
+print(str(diamonds))
+
+# we can create a new channel factor called internet as a binary indicator   
+# the ifelse() function is a good way to do this type of variable definition
+diamonds$internet <- ifelse((diamonds$channel == "Internet"),2,1)
+diamonds$internet <- factor(diamonds$internet,levels=c(1,2),labels=c("NO","YES"))
+
+#cat("\n","----- Checking the Definition of the internet factor -----","\n")
+# check the definition of the internet factor
+#print(table(diamonds$channel,diamonds$internet))
+ 
+# we might want to transform the response variable price using a log function
+diamonds$logprice <- log(diamonds$price)
+diamonds$logcarat <- log(diamonds$carat)
+
+cat("\n","----- Revised Structure of diamonds data frame -----","\n")
+# we check the structure of the diamonds data frame again
+print(str(diamonds))
+```
+
+Variable  | Description
+----------|-------------------------------------
+Carat     | The weight of the diamond in "carats" (1 carat = 200 milligrams).
+Color     | The tint of the diamond on an ordinal scale from D to Z, where D is perfectly colorless. Only colors from D to M are included in this dataset.
+Clarity   | A measurement of stone "purity" and number of visible inclusions on an 11-level ordinal scale: FL (flawless); VVS1 and VV2 (1 or 2 very, very slight inclusions); VS1 and VS2 (1 or 2 very slight inclusions); S1 and S2 (1 or 2 slight inclusions); and I1, I2, and I3 (1 to 3 visible inclusions).
+Cut       | The quality of the diamond cut categorized as "Ideal" or "Not Ideal".
+Channel   | The type of diamond seller: Independent, Mall, or Internet jeweler.
+Store     | The name of the store selling the diamond.
+Price     | The price of the diamond in USD in the year 2001.
+
+``` {r summarystats, echo = FALSE, include = FALSE, display = TRUE}
+summary(diamonds)
+```
+
+``` {r densityresponse, echo = FALSE, display = TRUE}
+# Plot assignments
+plot.p <- densityplot(~price, data=diamonds, main = "Density Plot of Price", par.settings=mytheme)
+plot.lp <- densityplot(~logprice, data=diamonds, main = "Density Plot of Log of Price", par.settings=mytheme)
+
+print(plot.p)
+print(plot.lp)
+
+# Plot prints
+print(plot.p, split = c(1, 1, 2, 1), more = TRUE)
+print(plot.lp, split = c(2, 1, 2, 1), more = TRUE)
+```
+
+``` {r densitycarat, echo = FALSE, display = TRUE}
+# Plot assignments
+plot.c <- densityplot(~carat, data=diamonds, main = "Density Plot of Carat", par.settings=mytheme)
+plot.lc <- densityplot(~logcarat, data=diamonds, main = "Density Plot of Log of Carat", par.settings=mytheme)
+
+print(plot.c)
+print(plot.lc)
+
+# Plot prints
+print(plot.p, split = c(1, 1, 2, 1), more = TRUE)
+print(plot.lp, split = c(2, 1, 2, 1), more = TRUE)
+```
+
+``` {r boxplots, echo = FALSE, display = TRUE}
+par(mfrow = c(2,2), oma = c(0,0,0,0), mar = c(2.5,4,2.5,2.5))
+for (i in c(2:5)) {
+    par(cex.main = 0.9, cex.axis = 0.8)
+    boxplot(logprice~diamonds[,i], data = diamonds, horizontal = TRUE, axes = FALSE)
+    title(paste(colnames(diamonds)[i]), line = 0.8)
+    axis(2, las=1, at=1:nlevels(as.factor(diamonds[,i])),labels=levels(as.factor(diamonds[,i])))
+    axis(1, las=2,at=0:12)
+}
+```
+
+
+``` {r boxplot2, echo = FALSE, display = TRUE}
+par(mfrow = c(1,1), oma = c(0,0,0,0), mar = c(2.5,5,2.5,2.5))
+for (i in c(6:6)) {
+    par(cex.main = 0.9, cex.axis = 0.8)
+    boxplot(logprice~diamonds[,i], data = diamonds, horizontal = TRUE, axes = FALSE)
+    title(paste(colnames(diamonds)[i]), line = 0.8)
+    axis(2, las=1, at=1:nlevels(as.factor(diamonds[,i])),labels=levels(as.factor(diamonds[,i])))
+    axis(1, las=2,at=0:12)
+}
+```
+``` {r bivariate, echo = FALSE, display = TRUE}
+plot(diamonds$logcarat, diamonds$logprice, xlab = "Log of Carats", ylab = "Log of Price", main="Log of Carat Weight vs. Log of Price")
+```
+
+# Exploratory Data Analysis
+
+``` {r latticescatterplot1, echo = FALSE, display = TRUE}
+xyplot(jitter(logprice) ~ jitter(logcarat) | internet + cut, 
+       data = diamonds,
+       group = store,
+       auto.key=list(space="right", columns=1, 
+                       title="Store", cex.title=1),
+        aspect = 0.7, 
+        layout = c(2, 2),
+        strip=function(...) strip.default(..., style=1),
+        xlab = "Log of Carat Weight", 
+        ylab = "Log of Price")
+```     
+
+``` {r latticescatterplot2, echo = FALSE, display = TRUE}
+xyplot(jitter(logprice) ~ jitter(logcarat) | internet, 
+       data = diamonds,
+       group = store,
+       auto.key=list(space="right", columns=1, 
+                       title="Store", cex.title=1),
+        aspect = 1, 
+        layout = c(2, 1),
+        strip=function(...) strip.default(..., style=1),
+        xlab = "Log of Carat Weight", 
+        ylab = "Log of Price")
+``` 
+
+``` {r latticescatterplot2, echo = FALSE, display = TRUE}
+xyplot(jitter(logprice) ~ jitter(carat) | store, 
+       data = diamonds,
+        aspect = 1, 
+        layout = c(4, 3),
+        strip=function(...) strip.default(..., style=1),
+        xlab = "Size or Weight of Diamond (carats)", 
+        ylab = "Log of Price",
+        par.settings=mytheme)
+``` 
+
+
+``` {r lm, echo = FALSE} 
+# having looked at the data, we are ready to begin our modeling work
+# we can use the lm() function for linear regression
+# predicting price from combinations of explanatory variables
+# we can explore variable transformations
+ 
+# for a generalized linear model we might try using the glm() function 
+# to predict channel, internet (YES or NO), from price or other variables
+# for logistic regression, we would use glm() with family="binomial"
+
+# the modeling methods we employ should make sense for the case study problem
+```
+
+```{r treemodel, echo = FALSE, display = FALSE}
+# load necessary libraries
+library(tree)
+library(ISLR)
+library(rpart)
+library(rpart.plot)
+
+treefit <- rpart(price ~ cut + carat + color + clarity + store + channel, data = diamonds)
+
+printcp(treefit) # display the results 
+plotcp(treefit) # visualize cross-validation results 
+summary(treefit) # detailed summary of splits
+
+barplot(treefit$variable.importance[order(treefit$variable.importance)], 
+        cex.names = 0.8, horiz = TRUE, cex.axis = 0.8, las=1)
+
+rpart.plot(treefit, uniform=TRUE, main="", cex = 0.8)
+
+
+```
+
+``` {r trainingsplit, echo = FALSE}
+train.size <- round(0.70*nrow(diamonds))
+set.seed(1234)
+diamonds.train.sample <- sample(1:nrow(diamonds), nrow(diamonds), replace = FALSE)
+diamonds$train <- NA
+for (i in 1:nrow(diamonds)) {
+  diamonds$train[i] <- ifelse(diamonds.train.sample[i] <= train.size, "train", "test")
+}
+
+data.train <- diamonds[diamonds$train=="train",]
+x.train <- data.train[,c(2:6,8,10)]
+y.train <- data.train[,9] 
+n.train.y <- length(y.train)
+
+data.test <- diamonds[diamonds$train=="test",]
+x.test <- data.test[,c(2:6,8,10)]
+y.test<- data.test[,9] 
+n.test <- dim(data.test)[1]
+
+x.train.std <- x.train
+x.train.std$logcarat <- ((x.train$logcarat)-mean(x.train.std$logcarat))/sd(x.train.std$logcarat) # standardize to have zero mean and unit sd
+data.train.std.y <- data.frame(x.train.std, logprice=y.train)
+
+x.test.std <- x.test
+x.test.std$logcarat <- (x.test$logcarat-mean(x.train.std$logcarat))/sd(x.train.std$logcarat) # standardize using training mean and sd
+data.test.std <- data.frame(x.test.std)
+data.test.std.y <- data.frame(x.test.std, logprice=y.test)
+```
+
+``` {r linearmodel1}
+lm1 <- lm(logprice ~ ., data = data.train.std.y)
+summary(lm1)
+plot(lm1)
+```
+
+# Model Development
+
+```{r}
+# create a function to simplify model performance evalutation on validation data.
+my.mse.function <- function(pred, valid){
+    mse <- mean((valid - pred)^2) # mean prediction error
+    mse.sd <- sd((valid - pred)^2)/sqrt(length(valid))
+    return(list(MSE = mse, SD = mse.sd))
+}
+```
+
+## Linear Regression Model (No Interaction Terms)
+
+``` {r linear}
+
+model.lm <- lm(logprice~logcarat, data=data.train.std.y)
+summary(model.lm)
+coef(model.lm)
+# predict outcomes for the test  set
+pred.model.lm <- predict(model.lm, newdata = data.test.std)
+my.data.lm <- my.mse.function(pred.model.lm, y.test)
+my.data.lm
+
+model.lmfourc <- lm(logprice~logcarat+clarity+color+cut, data=data.train.std.y)
+summary(model.lmfourc)
+coef(model.lmfourc)
+# predict outcomes for the test  set
+pred.model.lmfourc <- predict(model.lmfourc, newdata = data.test.std)
+my.data.lmfourc <- my.mse.function(pred.model.lmfourc, y.test)
+my.data.lmfourc
+
+model.lm1 <- lm(logprice~.-store, data=data.train.std.y)
+summary(model.lm1)
+coef(model.lm1)
+# predict outcomes for the test  set
+pred.model.lm1 <- predict(model.lm1, newdata = data.test.std)
+my.data.lm1 <- my.mse.function(pred.model.lm1, y.test)
+my.data.lm1
+
+model.lm1.forward <- stepAIC(model.lm1, direction = "forward")
+summary(model.lm1.forward)
+coef(model.lm1.forward)
+# predict outcomes for the test  set
+pred.model.lm1.forward <- predict(model.lm1.forward, newdata = data.test.std)
+my.data.lm1.forward <- my.mse.function(pred.model.lm1.forward, y.test)
+my.data.lm1.forward
+
+model.lm1.backward <- stepAIC(model.lm1, direction = "backward")
+summary(model.lm1.backward)
+coef(model.lm1.backward)
+# predict outcomes for the test  set
+pred.model.lm1.backward <- predict(model.lm1.backward, newdata = data.test.std)
+my.data.lm1.backward <- my.mse.function(pred.model.lm1.backward, y.test)
+my.data.lm1.backward
+
+model.lm1.stepwise <- stepAIC(model.lm1, direction = "both")
+summary(model.lm1.stepwise)
+coef(model.lm1.stepwise)
+# predict outcomes for the test  set
+pred.model.lm1.stepwise <- predict(model.lm1.stepwise, newdata = data.test.std)
+my.data.lm1.stepwise <- my.mse.function(pred.model.lm1.stepwise, y.test)
+my.data.lm1.stepwise
+
+#######################
+### Lasso - Model 1 ###
+#######################
+
+library(glmnet)
+x <- model.matrix(logprice ~ . -store - internet, data.train.std.y)[,-1]
+y <- data.train.std.y$logprice
+grid <- 10^seq(10, -2, length = 100)
+lasso.mod <- glmnet(x, y, alpha = 1, lambda = grid, thresh = 1e-12)
+plot(lasso.mod, xvar = "lambda", label = TRUE)
+set.seed(1)
+
+cv.out=cv.glmnet(x, y,alpha=1)
+plot(cv.out)
+bestlam1 <- cv.out$lambda.min
+bestlam1
+log(bestlam1)
+
+model.lm1.lasso <- glmnet(x, y, alpha = 1, lambda = bestlam1)
+lasso.coef=predict(model.lm1.lasso,type="coefficients",s=bestlam1)[1:7,]
+lasso.coef[lasso.coef!=0]
+
+x.test.std.1 <- model.matrix(logprice ~ .-store - internet, data.test.std.y)[,-1]
+# predict outcomes for the test  set
+pred.model.lm1.lasso <- predict(model.lm1.lasso, s = bestlam1, newx = x.test.std.1)
+my.data.model.lm1.lasso <- my.mse.function(pred.model.lm1.lasso, y.test)
+my.data.model.lm1.lasso
+```
+
+
+## Linear Regression Model (Interaction Terms)
+
+Create multiple linear regression models using the full set of predictors and the subsets chosen by the best subset and lasso methods in order to chose the one(s) that perform the best.
+
+
+``` {r}
+model.lm2 <- lm(logprice~.-store-internet+logcarat*color+logcarat*clarity+logcarat*cut+color*clarity+color*cut+clarity*cut+logcarat*channel+color*channel+clarity*channel+cut*channel, data=data.train.std.y)
+summary(model.lm2)
+coef(model.lm2)
+# predict outcomes for the test  set
+pred.model.lm2 <- predict(model.lm2, newdata = data.test.std)
+my.data.lm2 <- my.mse.function(pred.model.lm2, y.test)
+my.data.lm2
+
+model.lm2.reduced <- lm(logprice~.-store-internet+logcarat*cut+logcarat*channel, data=data.train.std.y)
+summary(model.lm2.reduced)
+coef(model.lm2.reduced)
+# predict outcomes for the test  set
+pred.model.lm2.reduced <- predict(model.lm2.reduced, newdata = data.test.std)
+my.data.lm2.reduced <- my.mse.function(pred.model.lm2.reduced, y.test)
+my.data.lm2.reduced
+
+library(MASS)
+model.lm2.forward <- stepAIC(model.lm2, direction = "forward")
+summary(model.lm2.forward)
+coef(model.lm2.forward)
+# predict outcomes for the test  set
+pred.model.lm2.forward <- predict(model.lm2.forward, newdata = data.test.std)
+my.data.lm2.forward <- my.mse.function(pred.model.lm2.forward, y.test)
+my.data.lm2.forward
+
+model.lm2.backward <- stepAIC(model.lm2, direction = "backward")
+summary(model.lm2.backward)
+coef(model.lm2.backward)
+# predict outcomes for the test  set
+pred.model.lm2.backward <- predict(model.lm2.backward, newdata = data.test.std)
+my.data.lm2.backward <- my.mse.function(pred.model.lm2.backward, y.test)
+my.data.lm2.backward
+
+model.lm2.stepwise <- stepAIC(model.lm2, direction = "both")
+summary(model.lm2.stepwise)
+coef(model.lm2.stepwise)
+# predict outcomes for the test  set
+pred.model.lm2.stepwise <- predict(model.lm2.stepwise, newdata = data.test.std)
+my.data.lm2.stepwise <- my.mse.function(pred.model.lm2.stepwise, y.test)
+my.data.lm2.stepwise
+
+library(leaps)
+#######################
+### Best Subset     ###
+#######################
+model.lm2.best <- regsubsets(logprice~.-store-internet+logcarat*color+logcarat*clarity+logcarat*cut+color*clarity+color*cut+clarity*cut+logcarat*channel+color*channel+clarity*channel+cut*channel, data=data.train.std.y, method = "exhaustive", nvmax = 100, nbest = 1, really.big = T)
+summary.model.lm2.best <- summary(model.lm2.best)
+which.max(summary.model.lm2.best$adjr2)
+summary.model.lm2.best$adjr2[which.max(summary.model.lm2.best$adjr2)]
+coef(model.lm2.best,which.max(summary.model.lm2.best$adjr2))
+
+# predict outcomes for the test set
+predict.regsubsets=function(object,newdata,id,...){
+    form=as.formula(object$call[[2]])
+    mat=model.matrix(form,newdata)
+    coefi=coef(object,id=id)
+    xvars=names(coefi)
+    mat[,xvars]%*%coefi
+}
+
+pred.model.lm2.best <- predict.regsubsets(model.lm2.best, data.test.std.y, id = which.max(summary.model.lm2.best$adjr2))
+
+my.data.model.lm2.best <- my.mse.function(pred.model.lm2.best, y.test)
+my.data.model.lm2.best
+
+#######################
+### Lasso - Model 2 ###
+#######################
+
+library(glmnet)
+x <- model.matrix(logprice ~ .-store-internet+logcarat*color+logcarat*clarity+logcarat*cut+color*clarity+color*cut+clarity*cut+logcarat*channel+color*channel+clarity*channel+cut*channel, data.train.std.y)[,-1]
+y <- data.train.std.y$logprice
+grid <- 10^seq(10, -2, length = 100)
+lasso.mod <- glmnet(x, y, alpha = 1, lambda = grid, thresh = 1e-12)
+plot(lasso.mod, xvar = "lambda", label = TRUE)
+set.seed(1)
+
+cv.out=cv.glmnet(x, y,alpha=1)
+plot(cv.out)
+bestlam1 <- cv.out$lambda.min
+bestlam1
+log(bestlam1)
+
+model.lm2.lasso <- glmnet(x, y, alpha = 1, lambda = bestlam1)
+lasso.coef=predict(model.lm2.lasso,type="coefficients",s=bestlam1)[1:16,]
+lasso.coef[lasso.coef!=0]
+
+x.test.std.2 <- model.matrix(logprice ~ .-store -internet+logcarat*color+logcarat*clarity+logcarat*cut+color*clarity+color*cut+clarity*cut+logcarat*channel+color*channel+clarity*channel+cut*channel, data.test.std.y)[,-1]
+# predict outcomes for the test  set
+pred.model.lm2.lasso <- predict(model.lm2.lasso, s = bestlam1, newx = x.test.std.2)
+my.data.model.lm2.lasso <- my.mse.function(pred.model.lm2.lasso, y.test)
+my.data.model.lm2.lasso
+```
+
+## Tree Model
+Use regression trees as an early variable selection approach and to look for possible interaction effects.
+
+```{r treemodel, echo = FALSE, display = FALSE}
+# load necessary libraries
+library(tree)
+library(ISLR)
+library(rpart)
+library(rpart.plot)
+
+set.seed(1)
+# create the model using the training data set
+model.regtree1 <- rpart(logprice ~ ., data.train.std.y[,c(1:4,6:8)])
+
+printcp(model.regtree1) # display the results 
+plotcp(model.regtree1) # visualize cross-validation results 
+summary(model.regtree1) # detailed summary of splits
+model.regtree1
+
+barplot(model.regtree1$variable.importance[order(model.regtree1$variable.importance)], 
+        cex.names = 0.8, horiz = TRUE, cex.axis = 0.8, las=1)
+
+rpart.plot(model.regtree1, uniform=TRUE, main="", cex = 0.7)
+
+
+pred.regtree1 <- predict(model.regtree1, newdata = data.test.std.y)
+
+#calculate MSE and SE of MSE
+my.data.regtree1 <- my.mse.function(pred.regtree1, y.test)
+my.data.regtree1
+```
+
+```{r treeplot, echo = FALSE, display = TRUE}
+# plot the tree
+plot(model.regtree1)
+text(model.regtree1,pretty=0)
+```
+
+## Random Forest Model
+
+``` {r randomForestModel}
+# load necessary libraries
+library(randomForest)
+
+# build the model
+set.seed(1)
+model.reg.rf1 <- randomForest(logprice ~ . , data=data.train.std.y[,c(1:4,7:8)], importance=TRUE)
+
+# review model summary statistics
+model.reg.rf1
+summary.model.reg.rf1 <- summary(model.reg.rf1)
+importance(model.reg.rf1)
+varImpPlot(model.reg.rf1, main = "Variable Importance Plot")
+plot(model.reg.rf1)
+
+# predict outcomes for the validation  set
+pred.reg.rf1 <- predict(model.reg.rf1,data.test.std.y, type="response")
+my.data.reg.rf1 <- my.mse.function(pred.reg.rf1,y.test)
+my.data.reg.rf1
+
+
+# build the model
+set.seed(1)
+model.reg.rf2 <- randomForest(logprice ~ ., data=data.train.std.y, importance=TRUE)
+
+# review model summary statistics
+model.reg.rf2
+summary.model.reg.rf2 <- summary(model.reg.rf2)
+importance(model.reg.rf2)
+varImpPlot(model.reg.rf2, main = "Variable Importance Plot")
+plot(model.reg.rf2)
+
+# predict outcomes for the validation  set
+pred.reg.rf2 <- predict(model.reg.rf2,data.test.std.y, type="response")
+my.data.reg.rf2 <- my.mse.function(pred.reg.rf2,y.test)
+my.data.reg.rf2
+```
+
+# Model Comparison
+```{r}
+my.data.summary <- cbind(my.data.lm, my.data.lm1, my.data.lm1.backward, my.data.lm1.forward, my.data.lm1.stepwise, my.data.model.lm1.lasso, my.data.lm2, my.data.lm2.backward, my.data.lm2.forward, my.data.lm2.stepwise, my.data.regtree1, my.data.reg.rf1)
+
+my.data.model.lm2.lasso
+
+my.data.summary
+
+```
+
+
+## FINAL RESULTS
+
+Save final results for both classification and regression
+
+```{r}
+# 
+length(chat.test) # check length = 2007
+length(yhat.test) # check length = 2007
+chat.test[1:10] # check this consists of 0s and 1s
+yhat.test[1:10] # check this consists of plausible predictions of logprice
+
+ip <- data.frame(chat=chat.test, yhat=yhat.test) # data frame with two variables: chat and yhat
+write.csv(ip, file="CMM.csv", row.names=FALSE) # use your initials for the file name
+
+# submit the csv file in Canvas for evaluation based on actual test donr and logprice values
+```
+
+# Model Comparison
+
+
